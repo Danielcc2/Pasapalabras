@@ -1,0 +1,335 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, RotateCcw, Check, X as XIcon, SkipForward, Clock } from 'lucide-react';
+
+// Preguntas y respuestas del juego (A-Z incluyendo Ñ)
+const QUESTIONS = [
+  { letter: 'A', answer: 'ABOGADO', question: 'Persona legalmente autorizada para defender en juicio los derechos o intereses de los litigantes.' },
+  { letter: 'B', answer: 'BIBLIOTECA', question: 'Lugar donde se conservan libros ordenados para la lectura.' },
+  { letter: 'C', answer: 'CAMISON', question: 'Prenda de dormir, generalmente de mujer, que cubre el tronco y cae suelta.' },
+  { letter: 'D', answer: 'DICCIONARIO', question: 'Libro en el que se recogen y explican de forma ordenada voces de una o más lenguas.' },
+  { letter: 'E', answer: 'ESCALERA', question: 'Serie de escalones que sirve para subir a los pisos de un edificio o a un plano más elevado.' },
+  { letter: 'F', answer: 'FABULA', question: 'Relato breve ficticio, en prosa o verso, con intención didáctica o moralizadora.' },
+  { letter: 'G', answer: 'GOLOSO', question: 'Aficionado a comer golosinas.' },
+  { letter: 'H', answer: 'HISTORIA', question: 'Narración y exposición de los acontecimientos pasados y dignos de memoria.' },
+  { letter: 'I', answer: 'IMAN', question: 'Mineral de hierro que tiene la propiedad de atraer el hierro y el acero.' },
+  { letter: 'J', answer: 'JABALI', question: 'Variedad salvaje del cerdo que sale en los cómics de Astérix.' },
+  { letter: 'K', answer: 'KAMIKAZE', question: 'Piloto suicida japonés de la Segunda Guerra Mundial.' },
+  { letter: 'L', answer: 'LENTEJA', question: 'Legumbre con forma de disco, pequeña y de color marrón verdoso.' },
+  { letter: 'M', answer: 'MEDICO', question: 'Persona que se dedica a curar o prevenir enfermedades.' },
+  { letter: 'N', answer: 'NOVIA', question: 'Mujer que mantiene una relación amorosa con otra persona con intención de casarse.' },
+  { letter: 'Ñ', answer: 'ÑU', question: 'Mamífero rumiante africano de la familia de los antílopes.' },
+  { letter: 'O', answer: 'OREJA', question: 'Órgano externo de la audición.' },
+  { letter: 'P', answer: 'PANADERIA', question: 'Establecimiento donde se hace o vende pan.' },
+  { letter: 'Q', answer: 'QUESO', question: 'Producto obtenido por la maduración de la cuajada de la leche.' },
+  { letter: 'R', answer: 'RATON', question: 'Pequeño roedor que suele convivir con el ser humano o dispositivo para manejar el PC.' },
+  { letter: 'S', answer: 'SOMBRERO', question: 'Prenda de vestir que sirve para cubrir la cabeza.' },
+  { letter: 'T', answer: 'TRUENO', question: 'Estruendo, asociado al rayo, producido en las nubes por una descarga eléctrica.' },
+  { letter: 'U', answer: 'URANIO', question: 'Elemento químico metálico, radiactivo, usado como combustible nuclear.' },
+  { letter: 'V', answer: 'VACACIONES', question: 'Descanso temporal de una actividad habitual, principalmente del trabajo o estudio.' },
+  { letter: 'W', answer: 'WIFI', question: 'Tecnología que permite la conexión inalámbrica a internet.' },
+  { letter: 'X', answer: 'XILOFONO', question: 'Instrumento musical de percusión formado por láminas de madera.' },
+  { letter: 'Y', answer: 'YATE', question: 'Embarcación de gala o de recreo.' },
+  { letter: 'Z', answer: 'ZOOLOGICO', question: 'Lugar en el que se conservan, cuidan y crían diversas especies animales.' },
+];
+
+// Opciones de tiempo actualizadas
+const TIME_OPTIONS = [100, 200, 300, 400];
+
+export default function PasapalabraApp() {
+  const [gameState, setGameState] = useState('welcome'); // welcome, playing, finished
+  const [selectedTime, setSelectedTime] = useState(200); // Default a 200s
+  const [timeLeft, setTimeLeft] = useState(200);
+  const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
+  const [userAnswer, setUserAnswer] = useState('');
+  
+  // Estado de cada letra: 'pending', 'correct', 'incorrect', 'pasapalabra'
+  const [statuses, setStatuses] = useState(Array(QUESTIONS.length).fill('pending'));
+  const [score, setScore] = useState({ correct: 0, incorrect: 0 });
+
+  const inputRef = useRef(null);
+  const timerRef = useRef(null);
+
+  // Normalizar texto (quitar acentos y mayúsculas)
+  const normalize = (str) => {
+    return str
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+  };
+
+  // Iniciar juego
+  const startGame = () => {
+    setGameState('playing');
+    setTimeLeft(selectedTime);
+    setStatuses(Array(QUESTIONS.length).fill('pending'));
+    setCurrentTurnIndex(0);
+    setScore({ correct: 0, incorrect: 0 });
+    setUserAnswer('');
+  };
+
+  // Timer Logic
+  useEffect(() => {
+    if (gameState === 'playing' && timeLeft > 0) {
+      timerRef.current = setTimeout(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0 && gameState === 'playing') {
+      endGame();
+    }
+    return () => clearTimeout(timerRef.current);
+  }, [timeLeft, gameState]);
+
+  // Enfocar input al cambiar de turno
+  useEffect(() => {
+    if (gameState === 'playing' && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [currentTurnIndex, gameState]);
+
+  const endGame = () => {
+    setGameState('finished');
+  };
+
+  // Buscar el siguiente índice disponible (que no sea correct ni incorrect)
+  const findNextIndex = (startIndex) => {
+    let nextIndex = startIndex + 1;
+    let count = 0;
+    
+    // Bucle para encontrar la siguiente pregunta pendiente
+    while (count < QUESTIONS.length) {
+      if (nextIndex >= QUESTIONS.length) nextIndex = 0;
+      
+      if (statuses[nextIndex] === 'pending' || statuses[nextIndex] === 'pasapalabra') {
+        return nextIndex;
+      }
+      nextIndex++;
+      count++;
+    }
+    return -1; // No quedan preguntas
+  };
+
+  const handlePasapalabra = (e) => {
+    if (e) e.preventDefault();
+    
+    const newStatuses = [...statuses];
+    newStatuses[currentTurnIndex] = 'pasapalabra';
+    setStatuses(newStatuses);
+    
+    const next = findNextIndex(currentTurnIndex);
+    if (next !== -1) {
+      setCurrentTurnIndex(next);
+      setUserAnswer('');
+    } else {
+      endGame();
+    }
+  };
+
+  const checkAnswer = (e) => {
+    e.preventDefault();
+    
+    const currentQuestion = QUESTIONS[currentTurnIndex];
+    const isCorrect = normalize(userAnswer) === normalize(currentQuestion.answer);
+    
+    const newStatuses = [...statuses];
+    newStatuses[currentTurnIndex] = isCorrect ? 'correct' : 'incorrect';
+    setStatuses(newStatuses);
+
+    setScore(prev => ({
+      correct: prev.correct + (isCorrect ? 1 : 0),
+      incorrect: prev.incorrect + (isCorrect ? 0 : 1)
+    }));
+
+    const next = findNextIndex(currentTurnIndex);
+    if (next !== -1) {
+      setCurrentTurnIndex(next);
+      setUserAnswer('');
+    } else {
+      // Verificar si quedan pendientes (caso borde donde se acaba justo en la última)
+      const anyPending = newStatuses.some(s => s === 'pending' || s === 'pasapalabra');
+      if (!anyPending) {
+        endGame();
+      } else {
+         setCurrentTurnIndex(next);
+         setUserAnswer('');
+      }
+    }
+  };
+
+  // Cálculo de posición circular
+  const getPosition = (index, total) => {
+    const angle = (index / total) * 2 * Math.PI - Math.PI / 2; // -90deg para empezar arriba
+    const radius = 42; // % del contenedor
+    const x = 50 + radius * Math.cos(angle);
+    const y = 50 + radius * Math.sin(angle);
+    return { x, y };
+  };
+
+  // Determinar color de la letra
+  const getLetterColor = (status, index) => {
+    if (index === currentTurnIndex && gameState === 'playing') return 'bg-yellow-400 text-black border-white scale-110 ring-2 ring-white z-20';
+    switch (status) {
+      case 'correct': return 'bg-green-500 text-white border-green-700';
+      case 'incorrect': return 'bg-red-500 text-white border-red-700';
+      case 'pasapalabra': return 'bg-blue-600 text-white border-white opacity-90'; // Pasapalabra se ve igual que pendiente pero ya fue visitada
+      default: return 'bg-blue-800 text-white border-white'; // Pending
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-white font-sans overflow-hidden flex flex-col items-center justify-center p-4">
+      
+      {/* HEADER */}
+      <div className="absolute top-4 w-full flex justify-between px-8 max-w-4xl z-10">
+        <div className="flex flex-col items-center">
+          <span className="text-xs uppercase tracking-widest text-blue-300">Tiempo</span>
+          <div className={`text-3xl font-bold font-mono ${timeLeft < 10 && gameState === 'playing' ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+            {timeLeft}
+          </div>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-xs uppercase tracking-widest text-green-400">Aciertos</span>
+          <div className="text-3xl font-bold font-mono text-green-400">{score.correct}</div>
+        </div>
+      </div>
+
+      {/* GAME CONTAINER */}
+      <div className="relative w-full max-w-[500px] aspect-square flex items-center justify-center">
+        
+        {/* EL ROSCO */}
+        <div className="absolute inset-0 rounded-full border-4 border-slate-800 bg-slate-800/50 shadow-2xl">
+          {QUESTIONS.map((item, index) => {
+            const pos = getPosition(index, QUESTIONS.length);
+            return (
+              <div
+                key={item.letter}
+                className={`absolute w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 font-bold transition-all duration-300 shadow-lg ${getLetterColor(statuses[index], index)}`}
+                style={{
+                  left: `${pos.x}%`,
+                  top: `${pos.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                {item.letter}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* CENTER CONTENT */}
+        <div className="z-10 w-[65%] h-[65%] rounded-full bg-slate-900 border-4 border-blue-500/30 flex flex-col items-center justify-center p-6 text-center shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+          
+          {gameState === 'welcome' && (
+            <div className="animate-in fade-in zoom-in duration-500 flex flex-col items-center gap-2 w-full">
+              <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center mb-1 shadow-lg shadow-blue-500/50">
+                <Play size={24} className="ml-1" />
+              </div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">EL ROSCO</h1>
+              
+              <div className="w-full mt-2">
+                <p className="text-slate-400 text-xs mb-2 uppercase tracking-wider flex items-center justify-center gap-1">
+                  <Clock size={12}/> Tiempo de juego
+                </p>
+                <div className="flex justify-center gap-2 mb-4">
+                  {TIME_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => setSelectedTime(opt)}
+                      className={`px-3 py-1 rounded text-sm font-bold transition-all ${
+                        selectedTime === opt 
+                          ? 'bg-blue-500 text-white ring-2 ring-blue-300 scale-110' 
+                          : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                      }`}
+                    >
+                      {opt}s
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button 
+                onClick={startGame}
+                className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full font-bold shadow-lg shadow-blue-600/40 transition-all hover:scale-105 active:scale-95"
+              >
+                JUGAR
+              </button>
+            </div>
+          )}
+
+          {gameState === 'finished' && (
+            <div className="animate-in fade-in zoom-in duration-500 flex flex-col items-center gap-4">
+              <h2 className="text-2xl font-bold mb-2">¡TIEMPO!</h2>
+              <div className="grid grid-cols-2 gap-4 w-full text-center">
+                <div className="bg-green-900/30 p-2 rounded-lg border border-green-500/30">
+                  <div className="text-xs text-green-400 uppercase">Correctas</div>
+                  <div className="text-2xl font-bold text-green-400">{score.correct}</div>
+                </div>
+                <div className="bg-red-900/30 p-2 rounded-lg border border-red-500/30">
+                  <div className="text-xs text-red-400 uppercase">Incorrectas</div>
+                  <div className="text-2xl font-bold text-red-400">{score.incorrect}</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setGameState('welcome')}
+                className="mt-4 flex items-center gap-2 px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors"
+              >
+                <RotateCcw size={18} /> Volver al Inicio
+              </button>
+            </div>
+          )}
+
+          {gameState === 'playing' && (
+            <div className="w-full h-full flex flex-col justify-between py-2">
+              <div className="flex-1 flex flex-col justify-center">
+                <div className="text-5xl font-black text-blue-500 mb-2 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+                  {QUESTIONS[currentTurnIndex].letter}
+                </div>
+                <div className="text-sm md:text-base font-medium leading-tight text-slate-100 overflow-y-auto max-h-[120px] scrollbar-hide">
+                  <span className="text-blue-400 font-bold block mb-1">
+                     {QUESTIONS[currentTurnIndex].question.startsWith('Contiene') ? 'CONTIENE LA' : 'EMPIEZA POR'} {QUESTIONS[currentTurnIndex].letter}:
+                  </span>
+                  {QUESTIONS[currentTurnIndex].question}
+                </div>
+              </div>
+
+              <form onSubmit={checkAnswer} className="w-full mt-4 flex flex-col gap-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={userAnswer}
+                  onChange={(e) => setUserAnswer(e.target.value)}
+                  placeholder="Tu respuesta..."
+                  className="w-full bg-slate-800 border-2 border-slate-600 rounded-lg px-4 py-2 text-center text-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 uppercase placeholder-slate-500 transition-colors"
+                  autoComplete="off"
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    type="button" 
+                    onClick={handlePasapalabra}
+                    className="flex items-center justify-center gap-1 bg-orange-600 hover:bg-orange-500 text-white py-2 rounded-lg font-bold text-sm transition-colors shadow-lg shadow-orange-900/20 active:scale-95"
+                  >
+                    <SkipForward size={16} /> PASAPALABRA
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex items-center justify-center gap-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg font-bold text-sm transition-colors shadow-lg shadow-green-900/20 active:scale-95"
+                  >
+                    <Check size={16} /> ENVIAR
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+        </div>
+      </div>
+      
+      {/* FOOTER INSTRUCTIONS */}
+      <div className="absolute bottom-4 text-slate-500 text-xs text-center max-w-xs">
+        <p>Escribe tu respuesta y presiona Enter o Enviar.</p>
+        <p>Usa "Pasapalabra" para saltar el turno.</p>
+      </div>
+    </div>
+  );
+}
